@@ -18,6 +18,7 @@ finish() {
 	echo
 	echo 'Stopping...'
 	chmod 644 "${temp_result_file}"
+	sed -i '/\r/d' "${temp_result_file}"
 	printf '\nThe result file is: %s\n' "${temp_result_file}"
 	exit
 }
