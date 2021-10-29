@@ -5,7 +5,7 @@ input_file_size="$(lsblk -n -d -b -o SIZE '/dev/sdb')"
 range_size="$(expr ${input_file_size} '/' 127)"
 block_count="$(expr ${range_size} '/' ${block_size})"
 current_block=0
-temp_result_file="$(mktemp)"
+temp_result_file="$(mktemp --suffix='-benchmark-file-regions.txt')"
 
 if [ -z "${input_file}" ]
 then
