@@ -37,3 +37,4 @@ esac
 
 eval $cmd_pre $options $cmd_post $output
 echo "Screenshot saved to $result_msg"
+notify-send "Screenshot taken" "Screenshot saved to $result_msg"
