@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 import time
 import threading
+import resource
 import socket
 import socketserver
 import argparse
 
 BUFFER_SIZE = 1024
-TIMEOUT_PERIOD = 0.1
+TIMEOUT_PERIOD = 0.15
+OPEN_FILE_LIMIT = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+
+tcp_ports_open = []
+udp_ports_open = []
+
+resource.setrlimit(resource.RLIMIT_NOFILE, (OPEN_FILE_LIMIT, OPEN_FILE_LIMIT))
 
 parser = argparse.ArgumentParser(description='''Test for open ports.
 Might need to run as root for ports below 1024
-and upping open file limit with `ulimit` for opening more than 1024 ports at a time.''')
+and upping open file limit with `ulimit` for opening more ports at a time.''')
 parser.add_argument('mode', help='server, client')
 parser.add_argument('hostname', help='set this to "0" for server to listen on all interfaces')
 parser.add_argument('-t', '--tcp', action='store_true', help='TCP only')
@@ -29,14 +36,36 @@ class CustomUDPRequestHandler(socketserver.DatagramRequestHandler):
         print(self.rfile.read())
         self.wfile.write(b'hi udp\n')
 
+def test_tcp(hostname, port):
+    client = socket.socket(type=socket.SOCK_STREAM)
+    client.settimeout(TIMEOUT_PERIOD)
+    try:
+        client.connect((hostname, port))
+        client.sendall(f'hello tcp port {port}\n'.encode('ascii'))
+        client.close()
+        print(f'\nTCP port {port} is open.\n')
+        tcp_ports_open.append(port)
+    except (ConnectionError, TimeoutError) as e:
+        client.close()
+
+def test_udp(hostname, port):
+    client = socket.socket(type=socket.SOCK_DGRAM)
+    client.settimeout(TIMEOUT_PERIOD)
+    try:
+        client.sendto(f'hello udp port {port}\n'.encode('ascii'), (hostname, port))
+        if client.recv(BUFFER_SIZE):
+            print(f'\nUDP port {port} is open.\n')
+            udp_ports_open.append(port)
+        client.close()
+    except (ConnectionError, TimeoutError) as e:
+        client.close()
 
 def start_server():
     print('Setting up server ...')
-    tcp_servers = []
-    udp_servers = []
+    server_thread_list = []
     skipped_tcp_ports = []
     skipped_udp_ports = []
-    for port in range(args.sp, args.ep):
+    for port in range(args.sp, args.ep+1):
         if args.udp:
             break
         try:
@@ -46,11 +75,11 @@ def start_server():
             server_thread = threading.Thread(target=server.serve_forever)
             server_thread.daemon = True
             server_thread.start()
-            tcp_servers.append(server_thread)
+            server_thread_list.append(server_thread)
         except OSError as e:
             skipped_tcp_ports.append(port)
     print('\n\nDone setting up TCP ports.\n')
-    for port in range(args.sp, args.ep):
+    for port in range(args.sp, args.ep+1):
         if args.tcp:
             break
         try:
@@ -60,7 +89,7 @@ def start_server():
             server_thread = threading.Thread(target=server.serve_forever)
             server_thread.daemon = True
             server_thread.start()
-            udp_servers.append(server_thread)
+            server_thread_list.append(server_thread)
         except OSError as e:
             skipped_udp_ports.append(port)
     print('\n\nDone setting up UDP ports.\n')
@@ -68,43 +97,31 @@ def start_server():
         print(f'Skipped {len(skipped_tcp_ports)} TCP ports and {len(skipped_udp_ports)} UDP ports due to OS errors.')
         print('Try running as root for port number below 1024 and upping open file limit with `ulimit`.')
     print('Done setting up server.')
-    while True:
-        time.sleep(1)
+    server_thread_list[0].join()
 
 def start_client():
-    tcp_ports_open = []
-    udp_ports_open = []
-    for port in range(args.sp, args.ep):
+    client_thread_list = []
+    for port in range(args.sp, args.ep+1):
         if args.udp:
             break
         print(f'Testing TCP port {port}/{args.ep} ...', end='\r')
-        client = socket.socket(type=socket.SOCK_STREAM)
-        client.settimeout(TIMEOUT_PERIOD)
-        try:
-            client.connect((args.hostname, port))
-            client.sendall(f'hello tcp port {port}\n'.encode('ascii'))
-            tcp_ports_open.append(port)
-            print(f'\nTCP port {port} is open.\n')
-        except (ConnectionError, TimeoutError) as e:
-            pass
-        client.close()
-    print('\nDone testing TCP ports.\n\n')
-    for port in range(args.sp, args.ep):
+        client_thread = threading.Thread(target=test_tcp, args=(args.hostname, port))
+        client_thread.daemon = True
+        client_thread.start()
+        client_thread_list.append(client_thread)
+    for port in range(args.sp, args.ep+1):
         if args.tcp:
             break
         print(f'Testing UDP port {port}/{args.ep} ...', end='\r')
-        client = socket.socket(type=socket.SOCK_DGRAM)
-        client.settimeout(TIMEOUT_PERIOD)
-        try:
-            client.sendto(f'hello udp port {port}\n'.encode('ascii'), (args.hostname, port))
-            if client.recv(BUFFER_SIZE):
-                print(f'\nUDP port {port} is open.\n')
-                udp_ports_open.append(port)
-        except (ConnectionError, TimeoutError) as e:
-            pass
-        client.close()
-    print('\nDone testing UDP ports.\n\n')
-    print('-- Summary --')
+        client_thread = threading.Thread(target=test_udp, args=(args.hostname, port))
+        client_thread.daemon = True
+        client_thread.start()
+        client_thread_list.append(client_thread)
+    for thread in client_thread_list:
+        thread.join()
+    tcp_ports_open.sort()
+    udp_ports_open.sort()
+    print('\n-- Summary --')
     print('Opened TCP ports:')
     for port in tcp_ports_open:
         print(port, end=', ')
