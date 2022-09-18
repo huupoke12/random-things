@@ -97,7 +97,8 @@ def start_server():
         print(f'Skipped {len(skipped_tcp_ports)} TCP ports and {len(skipped_udp_ports)} UDP ports due to OS errors.')
         print('Try running as root for port number below 1024 and upping open file limit with `ulimit`.')
     print('Done setting up server.')
-    server_thread_list[0].join()
+    while True:
+        time.sleep(1)
 
 def start_client():
     client_thread_list = []
