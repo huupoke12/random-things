@@ -3,15 +3,15 @@ import time
 import threading
 import resource
 import socket
-import socketserver
 import argparse
 
 BUFFER_SIZE = 1024
 TIMEOUT_PERIOD = 0.5
+MESSAGE_LENGTH_FIELD_LENGTH = 2
 OPEN_FILE_LIMIT = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
 
-tcp_ports_open = []
-udp_ports_open = []
+ports_open = {'tcp': [], 'udp': []}
+ports_error = {'tcp': [], 'udp': []}
 
 resource.setrlimit(resource.RLIMIT_NOFILE, (OPEN_FILE_LIMIT, OPEN_FILE_LIMIT))
 
@@ -26,47 +26,111 @@ parser.add_argument('-sp', '--start-port', dest='sp', type=int, default=1, metav
 parser.add_argument('-ep', '--end-port', dest='ep', type=int, default=65535, metavar='port', help='end port')
 args = parser.parse_args()
 
-class CustomTCPRequestHandler(socketserver.StreamRequestHandler):
-    def handle(self):
-        notification = f'\n* TCP message from {self.client_address} at {self.server.server_address}:'
-        notification += '\n-- MESSAGE START --\n'
-        notification += self.rfile.read().decode('utf-8')
-        notification += '\n-- MESSAGE END --\n'
-        print(notification)
-        self.wfile.write(b'hi tcp\n')
+def get_socket_protocol_name(sock_type):
+    if sock_type == socket.SOCK_STREAM:
+        return 'TCP'
+    elif sock_type == socket.SOCK_DGRAM:
+        return 'UDP'
+    elif sock_type == socket.SOCK_RAW:
+        return 'RAW'
+    else:
+        return 'UNK'
 
-class CustomUDPRequestHandler(socketserver.DatagramRequestHandler):
-    def handle(self):
-        notification = f'\n* UDP message from {self.client_address} at {self.server.server_address}:'
+def get_formatted_message(socket_type, sender_address, receiver_address, message, codec='utf-8'):
+        notification = f'\n* A {len(message)}-bytes {get_socket_protocol_name(socket_type)} '
+        notification += f'message from {sender_address} at {receiver_address}:'
         notification += '\n-- MESSAGE START --\n'
-        notification += self.rfile.read().decode('utf-8')
+        notification += str(message) if codec == 'raw' else str(message, codec)
         notification += '\n-- MESSAGE END --\n'
-        print(notification)
-        self.wfile.write(b'hi udp\n')
+        return notification
 
-def test_tcp(hostname, port):
-    client = socket.socket(type=socket.SOCK_STREAM)
-    client.settimeout(TIMEOUT_PERIOD)
+def run_server(hostname, port, socket_type):
+    
+    sock = socket.socket(type=socket_type)
+    sock_empty = socket.socket(type=socket_type)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        client.connect((hostname, port))
-        client.sendall(f'hello tcp port {port}\n'.encode('ascii'))
-        client.close()
-        print(f'\nTCP port {port} is open.\n')
-        tcp_ports_open.append(port)
+        sock.bind((hostname, port))
+    except (PermissionError, OSError) as e:
+        sock.close()
+        ports_error[get_socket_protocol_name(socket_type).lower()].append(port)
+        return
+    if socket_type == socket.SOCK_STREAM:
+        sock.listen()
+    while True:
+        response = bytes(f'hi {get_socket_protocol_name(socket_type)} socket\n',
+                        'utf-8')
+        data = b''
+        if socket_type == socket.SOCK_STREAM:
+            client_socket, client_address = sock.accept()
+            message_length = int.from_bytes(
+                                        client_socket.recv(MESSAGE_LENGTH_FIELD_LENGTH),
+                                        'big')
+        else:
+            client_socket = sock
+            message_length_raw, client_address = client_socket.recvfrom(MESSAGE_LENGTH_FIELD_LENGTH)
+            message_length = int.from_bytes(message_length_raw, 'big')
+        sock_empty.sendto(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
+                client_address)
+        while message_length > 0:
+            chunk = client_socket.recv(min(message_length, BUFFER_SIZE))
+            data += chunk
+            message_length -= len(chunk)
+        print(get_formatted_message(socket_type,
+                                    client_address, client_socket.getsockname(),
+                                    data))
+        if socket_type == socket.SOCK_STREAM:
+            client_socket.send(len(response).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
+        else:
+            sock_empty.sendto(len(response).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
+                client_address)
+        while len(response) > 0:
+            if socket_type == socket.SOCK_STREAM:
+                response = response[client_socket.send(response):]
+            else:
+                response = response[sock_empty.sendto(response, client_address):]
+        client_socket.close()
+
+
+
+def send_test(hostname, port, socket_type):
+    target_address = (hostname, port)
+    sock = socket.socket(type=socket_type)
+    sock.settimeout(TIMEOUT_PERIOD)
+    message = bytes(f'hello {get_socket_protocol_name(socket_type)} port {port}\n', 'utf-8')
+    data = b''
+    try:
+        if socket_type == socket.SOCK_STREAM:
+            sock.connect((hostname, port))
+            sock.send(len(message).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
+        else:
+            sock.sendto(len(message).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
+                target_address)
+        if socket_type != socket.SOCK_STREAM:
+            sock.recv(MESSAGE_LENGTH_FIELD_LENGTH)
+        while len(message) > 0:
+            if socket_type == socket.SOCK_STREAM:
+                message = message[sock.send(message):]
+            else:
+                message = message[sock.sendto(message, target_address):]
+        response_length = int.from_bytes(
+                                        sock.recv(MESSAGE_LENGTH_FIELD_LENGTH),
+                                        'big')
+        while response_length > 0:
+            chunk = sock.recv(min(response_length, BUFFER_SIZE))
+            data += chunk
+            response_length -= len(chunk)
+        if socket_type == socket.SOCK_STREAM:
+            peer_name = sock.getpeername()
+        else:
+            peer_name = target_address
+        print(get_formatted_message(socket_type,
+                                    peer_name, sock.getsockname(),
+                                    data))
+        if len(data) > 0:
+            ports_open[get_socket_protocol_name(socket_type).lower()].append(port)
     except (ConnectionError, TimeoutError, OSError) as e:
-        client.close()
-
-def test_udp(hostname, port):
-    client = socket.socket(type=socket.SOCK_DGRAM)
-    client.settimeout(TIMEOUT_PERIOD)
-    try:
-        client.sendto(f'hello udp port {port}\n'.encode('ascii'), (hostname, port))
-        if client.recv(BUFFER_SIZE):
-            print(f'\nUDP port {port} is open.\n')
-            udp_ports_open.append(port)
-        client.close()
-    except (ConnectionError, TimeoutError) as e:
-        client.close()
+        sock.close()
 
 def start_server():
     print('Setting up server ...')
@@ -76,66 +140,61 @@ def start_server():
     for port in range(args.sp, args.ep+1):
         if args.udp:
             break
-        try:
-            print(f'Setting up server on TCP port {port}/{args.ep} ...', end='\r')
-            server = socketserver.TCPServer((args.hostname, port), CustomTCPRequestHandler)
-            server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_thread = threading.Thread(target=server.serve_forever)
-            server_thread.daemon = True
-            server_thread.start()
-            server_thread_list.append(server_thread)
-        except OSError as e:
-            skipped_tcp_ports.append(port)
+        print(f'Setting up server on TCP port {port}/{args.ep} ...', end='\r')
+        server_thread = threading.Thread(target=run_server, args=(
+            args.hostname, port, socket.SOCK_STREAM))
+        server_thread.daemon = True
+        server_thread.start()
+        server_thread_list.append(server_thread)
     print('\n\nDone setting up TCP ports.\n')
     for port in range(args.sp, args.ep+1):
         if args.tcp:
             break
-        try:
-            print(f'Setting up server on UDP port {port}/{args.ep} ...', end='\r')
-            server = socketserver.UDPServer((args.hostname, port), CustomUDPRequestHandler)
-            server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_thread = threading.Thread(target=server.serve_forever)
-            server_thread.daemon = True
-            server_thread.start()
-            server_thread_list.append(server_thread)
-        except OSError as e:
-            skipped_udp_ports.append(port)
+        print(f'Setting up server on UDP port {port}/{args.ep} ...', end='\r')
+        server_thread = threading.Thread(target=run_server, args=(
+            args.hostname, port, socket.SOCK_DGRAM))
+        server_thread.daemon = True
+        server_thread.start()
+        server_thread_list.append(server_thread)
     print('\n\nDone setting up UDP ports.\n')
-    if len(skipped_tcp_ports) != 0 or len(skipped_udp_ports) != 0:
-        print(f'Skipped {len(skipped_tcp_ports)} TCP ports and {len(skipped_udp_ports)} UDP ports due to OS errors.')
-        print('Try running as root for port number below 1024 and upping open file limit with `ulimit`.')
+    if len(ports_error["tcp"]) != 0 or len(ports_error["udp"]) != 0:
+        print(f'Skipped {len(ports_error["tcp"])} TCP ports ' +
+              f'and {len(ports_error["udp"])} UDP ports due to OS errors.')
+        print('Try running as root for port number below 1024 ' +
+              'and upping open file limit with `ulimit`.')
     print('Done setting up server.')
     while True:
         time.sleep(1)
 
 def start_client():
     client_thread_list = []
+    print('Running test ...')
     for port in range(args.sp, args.ep+1):
         if args.udp:
             break
-        print(f'Testing TCP port {port}/{args.ep} ...', end='\r')
-        client_thread = threading.Thread(target=test_tcp, args=(args.hostname, port))
+        client_thread = threading.Thread(target=send_test, args=(
+                                        args.hostname, port, socket.SOCK_STREAM))
         client_thread.daemon = True
         client_thread.start()
         client_thread_list.append(client_thread)
     for port in range(args.sp, args.ep+1):
         if args.tcp:
             break
-        print(f'Testing UDP port {port}/{args.ep} ...', end='\r')
-        client_thread = threading.Thread(target=test_udp, args=(args.hostname, port))
+        client_thread = threading.Thread(target=send_test, args=(
+                                        args.hostname, port, socket.SOCK_DGRAM))
         client_thread.daemon = True
         client_thread.start()
         client_thread_list.append(client_thread)
     for thread in client_thread_list:
         thread.join()
-    tcp_ports_open.sort()
-    udp_ports_open.sort()
+    ports_open['tcp'].sort()
+    ports_open['udp'].sort()
     print('\n-- Summary --')
     print('Opened TCP ports:')
-    for port in tcp_ports_open:
+    for port in ports_open['tcp']:
         print(port, end=', ')
     print('\nOpened UDP ports:')
-    for port in udp_ports_open:
+    for port in ports_open['udp']:
         print(port, end=', ')
     print('')
 
