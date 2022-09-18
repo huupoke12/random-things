@@ -45,7 +45,7 @@ def test_tcp(hostname, port):
         client.close()
         print(f'\nTCP port {port} is open.\n')
         tcp_ports_open.append(port)
-    except (ConnectionError, TimeoutError) as e:
+    except (ConnectionError, TimeoutError, OSError) as e:
         client.close()
 
 def test_udp(hostname, port):
