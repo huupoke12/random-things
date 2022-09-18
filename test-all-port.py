@@ -7,7 +7,7 @@ import socketserver
 import argparse
 
 BUFFER_SIZE = 1024
-TIMEOUT_PERIOD = 0.15
+TIMEOUT_PERIOD = 0.5
 OPEN_FILE_LIMIT = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
 
 tcp_ports_open = []
