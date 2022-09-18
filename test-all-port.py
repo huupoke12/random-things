@@ -28,12 +28,20 @@ args = parser.parse_args()
 
 class CustomTCPRequestHandler(socketserver.StreamRequestHandler):
     def handle(self):
-        print(self.rfile.readline())
-        self.wfile.write(f'hi tcp\n')
+        notification = f'\n* TCP message from {self.client_address} at {self.server.server_address}:'
+        notification += '\n-- MESSAGE START --\n'
+        notification += self.rfile.read().decode('utf-8')
+        notification += '\n-- MESSAGE END --\n'
+        print(notification)
+        self.wfile.write(b'hi tcp\n')
 
 class CustomUDPRequestHandler(socketserver.DatagramRequestHandler):
     def handle(self):
-        print(self.rfile.read())
+        notification = f'\n* UDP message from {self.client_address} at {self.server.server_address}:'
+        notification += '\n-- MESSAGE START --\n'
+        notification += self.rfile.read().decode('utf-8')
+        notification += '\n-- MESSAGE END --\n'
+        print(notification)
         self.wfile.write(b'hi udp\n')
 
 def test_tcp(hostname, port):
