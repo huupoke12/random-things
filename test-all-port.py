@@ -70,7 +70,7 @@ def run_server(hostname, port, socket_type):
             client_socket = sock
             message_length_raw, client_address = client_socket.recvfrom(MESSAGE_LENGTH_FIELD_LENGTH)
             message_length = int.from_bytes(message_length_raw, 'big')
-        sock_empty.sendto(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
+            sock_empty.sendto(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
                 client_address)
         while message_length > 0:
             chunk = client_socket.recv(min(message_length, BUFFER_SIZE))
@@ -89,9 +89,8 @@ def run_server(hostname, port, socket_type):
                 response = response[client_socket.send(response):]
             else:
                 response = response[sock_empty.sendto(response, client_address):]
-        client_socket.close()
-
-
+        if socket_type == socket.SOCK_STREAM:
+            client_socket.close()
 
 def send_test(hostname, port, socket_type):
     target_address = (hostname, port)
@@ -198,7 +197,8 @@ def start_client():
         print(port, end=', ')
     print('')
 
-if args.mode == 'server':
-    start_server()
-elif args.mode == 'client':
-    start_client()
+if __name__ == "__main__":
+    if args.mode == 'server':
+        start_server()
+    elif args.mode == 'client':
+        start_client()
