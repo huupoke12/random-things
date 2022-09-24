@@ -66,6 +66,7 @@ def run_server(hostname, port, socket_type):
             message_length = int.from_bytes(
                                         client_socket.recv(MESSAGE_LENGTH_FIELD_LENGTH),
                                         'big')
+            client_socket.send(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
         else:
             client_socket = sock
             message_length_raw, client_address = client_socket.recvfrom(MESSAGE_LENGTH_FIELD_LENGTH)
@@ -101,12 +102,14 @@ def send_test(hostname, port, socket_type):
     try:
         if socket_type == socket.SOCK_STREAM:
             sock.connect((hostname, port))
+            start_timer = time.perf_counter()
             sock.send(len(message).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
         else:
+            start_timer = time.perf_counter()
             sock.sendto(len(message).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
                 target_address)
-        if socket_type != socket.SOCK_STREAM:
-            sock.recv(MESSAGE_LENGTH_FIELD_LENGTH)
+        sock.recv(MESSAGE_LENGTH_FIELD_LENGTH)
+        end_timer = time.perf_counter()
         while len(message) > 0:
             if socket_type == socket.SOCK_STREAM:
                 message = message[sock.send(message):]
@@ -126,6 +129,7 @@ def send_test(hostname, port, socket_type):
         print(get_formatted_message(socket_type,
                                     peer_name, sock.getsockname(),
                                     data))
+        print(f'RTT latency = {(end_timer - start_timer)*1000} ms.')
         if len(data) > 0:
             ports_open[get_socket_protocol_name(socket_type).lower()].append(port)
     except (ConnectionError, TimeoutError, OSError) as e:
