@@ -51,47 +51,51 @@ def run_server(hostname, port, socket_type):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.bind((hostname, port))
-    except (PermissionError, OSError) as e:
+    except OSError as e:
         sock.close()
         ports_error[get_socket_protocol_name(socket_type).lower()].append(port)
         return
     if socket_type == socket.SOCK_STREAM:
         sock.listen()
     while True:
-        response = bytes(f'hi {get_socket_protocol_name(socket_type)} socket\n',
-                        'utf-8')
-        data = b''
-        if socket_type == socket.SOCK_STREAM:
-            client_socket, client_address = sock.accept()
-            message_length = int.from_bytes(
-                                        client_socket.recv(MESSAGE_LENGTH_FIELD_LENGTH),
-                                        'big')
-            client_socket.send(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
-        else:
-            client_socket = sock
-            message_length_raw, client_address = client_socket.recvfrom(MESSAGE_LENGTH_FIELD_LENGTH)
-            message_length = int.from_bytes(message_length_raw, 'big')
-            sock_empty.sendto(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
-                client_address)
-        while message_length > 0:
-            chunk = client_socket.recv(min(message_length, BUFFER_SIZE))
-            data += chunk
-            message_length -= len(chunk)
-        print(get_formatted_message(socket_type,
-                                    client_address, client_socket.getsockname(),
-                                    data))
-        if socket_type == socket.SOCK_STREAM:
-            client_socket.send(len(response).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
-        else:
-            sock_empty.sendto(len(response).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
-                client_address)
-        while len(response) > 0:
+        try:
+            response = bytes(f'hi {get_socket_protocol_name(socket_type)} socket\n',
+                            'utf-8')
+            data = b''
             if socket_type == socket.SOCK_STREAM:
-                response = response[client_socket.send(response):]
+                client_socket, client_address = sock.accept()
+                message_length = int.from_bytes(
+                                            client_socket.recv(MESSAGE_LENGTH_FIELD_LENGTH),
+                                            'big')
+                client_socket.send(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
             else:
-                response = response[sock_empty.sendto(response, client_address):]
-        if socket_type == socket.SOCK_STREAM:
-            client_socket.close()
+                client_socket = sock
+                message_length_raw, client_address = client_socket.recvfrom(MESSAGE_LENGTH_FIELD_LENGTH)
+                message_length = int.from_bytes(message_length_raw, 'big')
+                sock_empty.sendto(message_length.to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
+                    client_address)
+            while message_length > 0:
+                chunk = client_socket.recv(min(message_length, BUFFER_SIZE))
+                data += chunk
+                message_length -= len(chunk)
+            print(get_formatted_message(socket_type,
+                                        client_address, client_socket.getsockname(),
+                                        data))
+            if socket_type == socket.SOCK_STREAM:
+                client_socket.send(len(response).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'))
+            else:
+                sock_empty.sendto(len(response).to_bytes(MESSAGE_LENGTH_FIELD_LENGTH, 'big'),
+                    client_address)
+            while len(response) > 0:
+                if socket_type == socket.SOCK_STREAM:
+                    response = response[client_socket.send(response):]
+                else:
+                    response = response[sock_empty.sendto(response, client_address):]
+        except ConnectionError as e:
+            print(e)
+        finally:
+            if socket_type == socket.SOCK_STREAM:
+                client_socket.close()
 
 def send_test(hostname, port, socket_type):
     target_address = (hostname, port)
@@ -132,7 +136,9 @@ def send_test(hostname, port, socket_type):
         print(f'RTT latency = {(end_timer - start_timer)*1000} ms.')
         if len(data) > 0:
             ports_open[get_socket_protocol_name(socket_type).lower()].append(port)
-    except (ConnectionError, TimeoutError, OSError) as e:
+    except (ConnectionError, TimeoutError) as e:
+        pass
+    finally:
         sock.close()
 
 def start_server():
