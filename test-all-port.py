@@ -18,7 +18,7 @@ resource.setrlimit(resource.RLIMIT_NOFILE, (OPEN_FILE_LIMIT, OPEN_FILE_LIMIT))
 parser = argparse.ArgumentParser(description='''Test for open ports.
 Might need to run as root for ports below 1024
 and upping open file limit with `ulimit` for opening more ports at a time.''')
-parser.add_argument('mode', help='server, client')
+parser.add_argument('mode', help='s[erver], c[lient]')
 parser.add_argument('hostname', help='set this to "0" for server to listen on all interfaces')
 parser.add_argument('-t', '--tcp', action='store_true', help='TCP only')
 parser.add_argument('-u', '--udp', action='store_true', help='UDP only')
@@ -208,7 +208,9 @@ def start_client():
     print('')
 
 if __name__ == "__main__":
-    if args.mode == 'server':
+    if 'server'.startswith(args.mode):
         start_server()
-    elif args.mode == 'client':
+    elif 'client'.startswith(args.mode):
         start_client()
+    else:
+        print('Invalid mode!')
