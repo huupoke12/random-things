@@ -37,8 +37,9 @@ def get_socket_protocol_name(sock_type):
         return 'UNK'
 
 def get_formatted_message(socket_type, sender_address, receiver_address, message, codec='utf-8'):
-        notification = f'\n* A {len(message)}-bytes {get_socket_protocol_name(socket_type)} '
-        notification += f'message from {sender_address} at {receiver_address}:'
+        notification = f'\n* Received a {len(message)}-bytes {get_socket_protocol_name(socket_type)}'
+        notification += f' message from {sender_address}'
+        notification += f'\nat {receiver_address}, {time.ctime()}:'
         notification += '\n-- MESSAGE START --\n'
         notification += str(message) if codec == 'raw' else str(message, codec)
         notification += '\n-- MESSAGE END --\n'
