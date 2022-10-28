@@ -1,7 +1,7 @@
 #!/bin/sh
 
-cmd_pre="ffmpeg -hide_banner -loglevel warning -f x11grab -framerate 10 -draw_mouse 0"
-cmd_post="-i $DISPLAY -frames:v 1 -c:v png"
+cmd_pre="ffmpeg -hide_banner -loglevel warning -f x11grab -framerate 1000 -draw_mouse 0"
+cmd_post="-i $DISPLAY -frames:v 1 -update 1 -c:v png"
 file_path="$HOME/Pictures/Screenshots/Screenshot_$(date '+%Y-%m-%d_%H-%M-%S').png"
 
 case "$1" in
