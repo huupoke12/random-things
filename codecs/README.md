@@ -7,14 +7,35 @@ Use `mkv` (more widely supported) or `nut` (can contain more less used codecs) s
 # Video
 
 ## Lossy
-* If hardware codecs are available, use it. For NVIDIA, use `hevc_nvenc` (have not tested AV1).
-* Else, use `libx264` as it is the most optimised (software) codecs in FFmpeg (also being written in x86 assembly).
+* Software: `libsvtav1`
+  * Quality control: `-crf`. Range: `1-63`. Default `0` (automatic).
+  * Speed control: `-preset`. Range: `0-13`. Default: `-1` (automatic), seems like `10`.
+* Hardware: `av1_nvenc` if available (from 4000 series). Else `hevc_nvenc`.
+  * Quality control: `-cq`. Range: `1-51`. Default: `0` (automatic).
+  * Speed control: `-preset`. Range: `p1-p7`. Default: `p4`.
 
-### Lossless
-Same as lossy, but use `libx264rgb` instead of `libx264`. Try to use RGB as RGB to YUV (4:4:4) 8-bit is lossy.
-`ffv1` is worse than `libx264rgb`.
-* `libx264rgb`: `-qp 0 -preset ultrafast`
-* `hevc_nvenc`: `-pix_fmt gbrp -tune lossless` (add `-preset p1` if speed is more prioritised than size)
+* Notes:
+  * For compatibility, use `libx264` instead of `libx265` and `libvpx-vp9`, as the `libx264` encoder is more optimised in FFmpeg than the others. Just tune its speed and quality control.
+    * Quality control: `-crf`. Range: `0-3.40282e+38`. Default: `23`
+    * Speed control: `-preset`. Range: `placebo-ultrafast`. Default: `medium`
 
-`apng` might have better compression ratio, but it is very slow.
-`huffyuv`/`ffvhuff` is very fast, but have significant size (still better than uncompresed).
+## Lossless
+Try to use the same colour format as the source, since RGB to YUV 4:4:4 8-bit is lossy.
+
+For RGB:
+* Software: `libx264rgb`: `-qp 0`. 
+  * Speed control: `-preset`. Range: `placebo-ultrafast`. Default: `medium`.
+    * For even faster speed than `ultrafast`, try `ffv1` and `huffyuv`.
+* Hardware: `av1_nvenc`: `-pix_fmt gbrp -tune lossless`.
+  * Speed control: Same as above
+
+
+# Audio
+
+## Lossy
+* Software: `libopus`
+  * Speed control: `-compression_level`. Range: `0-10`. Default: `10`.
+
+## Lossless
+* Software: `flac`
+  * Speed control: `-compression_level`. Range: `0-12`. Default: `5`.
