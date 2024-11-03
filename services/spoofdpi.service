@@ -3,7 +3,7 @@ Description=Transparent proxy server to bypass DPI
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/spoofdpi -dns 1.1.1.1 -port 8880 -no-banner true
+ExecStart=/usr/local/bin/spoofdpi -dns-addr 1.1.1.1 -port 8880 -silent
 Restart=on-failure
 
 [Install]
